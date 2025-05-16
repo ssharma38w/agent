@@ -1,0 +1,92 @@
+✅ 1. Pydantic Tool Schemas
+
+Q: Should I define Pydantic models per tool?
+Yes. Each tool should define:
+InputModel(BaseModel)
+OutputModel(BaseModel)
+Example (for WeatherTool):
+
+class WeatherInput(BaseModel):
+    city: str
+
+class WeatherOutput(BaseModel):
+    temperature_celsius: float
+    description: str
+Q: Enforce type validation or coerce?
+Use strict=True in BaseModel.Config to enforce input types in dev, and relax (e.g., validate_assignment = True) in prod.
+Catch ValidationError at runtime and return graceful chatbot messages.
+✅ 2. LangChain Integration
+
+Q: Which component for Ollama?
+Use:
+
+from langchain_community.chat_models import ChatOllama
+llm = ChatOllama(model="mistral", temperature=0.7)
+If you're only using Ollama for text generation, ChatOllama is best.
+You can wrap it in a LLMChain for prompting workflows.
+✅ 3. RAG System Setup
+
+Q: What data source?
+For now: use local Markdown or PDF files in a /data folder
+Later, support for web scraping or tenant-specific embeddings
+LangChain Components:
+from langchain.document_loaders import DirectoryLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores import FAISS  # or Chroma
+from langchain.embeddings import OllamaEmbeddings
+Example:
+
+loader = DirectoryLoader("./data", glob="**/*.md")
+docs = loader.load()
+splitter = RecursiveCharacterTextSplitter()
+chunks = splitter.split_documents(docs)
+
+embedding = OllamaEmbeddings(model="mistral")
+vectorstore = FAISS.from_documents(chunks, embedding)
+retriever = vectorstore.as_retriever()
+Q: How should RAG be triggered?
+Make RAG a separate tool, invoked by the Planner when user intent is "search_from_docs" or "ask_docs".
+Schema:
+
+class RagInput(BaseModel):
+    query: str
+
+class RagOutput(BaseModel):
+    answer: str
+✨ Bonus: Add "source_documents" to RagOutput if you want citations.
+✅ 4. Architecture — Keep or Replace Planner/Executor?
+
+Recommended: Keep your current Planner/Executor.
+Your custom architecture gives you more control, modularity, and auditability.
+LangChain Agents are powerful but harder to debug and customize deeply.
+You can wrap LangChain RAG and LLM tools inside your existing Tool interface.
+❗ Only replace Planner/Executor with LangChain Agent when:
+You want dynamic tool selection with tool descriptions and fewer constraints.
+✅ 5. Refactoring Tools as LangChain Tools
+
+Yes — wrap tools as LangChain-compatible Tool objects, so they can be used by:
+LangChain Agent if needed
+Your own Planner/Executor system
+Example:
+
+from langchain.tools import Tool
+
+def run_weather_tool(city: str) -> str:
+    # your existing tool logic
+    return ...
+
+weather_tool = Tool(
+    name="Weather",
+    func=run_weather_tool,
+    description="Get current weather by city name"
+)
+✅ 6. Development Priority (What to do next)
+
+Suggested next steps (high-priority in order):
+✅ Define Pydantic Input/Output schemas for all tools
+✅ Wrap existing tools as LangChain-compatible functions
+✅ Integrate ChatOllama and OllamaEmbeddings
+✅ Build RAG pipeline with local files and expose it as a RagTool
+🔜 (Optional) Add fallback LLMChain for prompt formatting and retry
+🔜 (Optional) Refactor Executor to support tool input/output validation using Pydantic
+🔜 Resume WeatherTool and MagnetTool using above foundation
