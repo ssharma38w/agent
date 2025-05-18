@@ -13,29 +13,37 @@ Available tools:
    Description: Searches the web using DuckDuckGo or SerpAPI. Useful for finding current information, news, or general web content.
    Arguments Schema (Pydantic): {"query": "<string: search_query>"}
 
-2. wikipedia_search:
-   Description: Fetches a summary of a topic from Wikipedia. Best for factual, encyclopedic information.
-   Arguments Schema (Pydantic): {"topic": "<string: topic_name>"}
-
-3. get_weather:
-   Description: Fetches real-time weather data for a given city using OpenWeatherMap API.
-   Arguments Schema (Pydantic): {"city": "<string: city_name>"}
-
-4. magnet_link_fetcher:
-   Description: Fetches torrent magnet links for a given movie or show name. Use responsibly and be aware of content legality.
-   Arguments Schema (Pydantic): {"query": "<string: movie_or_show_name>"}
-
-5. document_retrieval_augmented_generation (rag_tool):
-   Description: Answers questions based on a collection of local documents. Use this for queries that require information from specific uploaded or indexed files within the system.
-   Arguments Schema (Pydantic): {"query": "<string: user_question_about_documents>"}
-
-6. llm_response_generation:
+2. llm_response_generation:
    Description: If no specific tool is suitable, or to synthesize information from previous tool outputs, or for conversational responses (greetings, chit-chat, direct questions that don't need external data), use this tool to generate a direct text response using the LLM.
    Arguments Schema (Pydantic): {"prompt_to_llm": "<string: text_prompt_for_direct_response_or_synthesis>"}
-7. news_search:
+
+3. news_search:
    Description: Searches for the latest news articles on a given topic using NewsAPI.
    Arguments Schema (Pydantic): {"query": "<string: news_topic>"}
-"""
+# """
+# 2. wikipedia_search:
+#    Description: Fetches a summary of a topic from Wikipedia. Best for factual, encyclopedic information.
+#    Arguments Schema (Pydantic): {"topic": "<string: topic_name>"}
+
+# 3. get_weather:
+#    Description: Fetches real-time weather data for a given city using OpenWeatherMap API.
+#    Arguments Schema (Pydantic): {"city": "<string: city_name>"}
+
+# 4. magnet_link_fetcher:
+#    Description: Fetches torrent magnet links for a given movie or show name. Use responsibly and be aware of content legality.
+#    Arguments Schema (Pydantic): {"query": "<string: movie_or_show_name>"}
+
+# 5. document_retrieval_augmented_generation (rag_tool):
+#    Description: Answers questions based on a collection of local documents. Use this for queries that require information from specific uploaded or indexed files within the system.
+#    Arguments Schema (Pydantic): {"query": "<string: user_question_about_documents>"}
+
+# 6. llm_response_generation:
+#    Description: If no specific tool is suitable, or to synthesize information from previous tool outputs, or for conversational responses (greetings, chit-chat, direct questions that don't need external data), use this tool to generate a direct text response using the LLM.
+#    Arguments Schema (Pydantic): {"prompt_to_llm": "<string: text_prompt_for_direct_response_or_synthesis>"}
+# 7. news_search:
+#    Description: Searches for the latest news articles on a given topic using NewsAPI.
+#    Arguments Schema (Pydantic): {"query": "<string: news_topic>"}
+# """
 
 class Planner:
     def __init__(self):
@@ -64,6 +72,7 @@ class Planner:
         system_prompt = (
             """
 You are an AI assistant acting as a Planner. Your role is to analyze the user's query 
+Always use llm_response_generation at the end.
 and the conversation history to create a step-by-step plan to fulfill the user's request. 
 The plan MUST be in JSON format. Each step in the plan must specify a 'tool' to use from the available list, 
 'arguments' for that tool (as a JSON object strictly matching the tool's Pydantic Arguments Schema), and a brief 'reasoning' for the step.
@@ -79,8 +88,8 @@ Example Plan Format (ensure arguments match the Pydantic schema for the chosen t
 {
   "original_query": "What's the weather in Paris and what is the capital of France according to Wikipedia?",
   "plan": [
-    {"step": 1, "tool": "get_weather", "arguments": {"city": "Paris"}, "reasoning": "User asked for weather in Paris."},
-    {"step": 2, "tool": "wikipedia_search", "arguments": {"topic": "Capital of France"}, "reasoning": "User asked for the capital of France from Wikipedia."},
+    {"step": 1, "tool": "web_search", "arguments": {"query": "weather in paris"}, "reasoning": "User asked for weather in Paris."},
+    {"step": 2, "tool": "wikipedia_search", "arguments": {"query": "site:wikipedia capital of france"}, "reasoning": "User asked for the capital of France from Wikipedia."},
     {"step": 3, "tool": "llm_response_generation", "arguments": {"prompt_to_llm": "Synthesize the weather information for Paris and the capital of France from Wikipedia into a single, user-friendly response."}, "reasoning": "Combine results from previous tools for the user."}
   ]
 }
@@ -92,7 +101,7 @@ Example Plan Format (ensure arguments match the Pydantic schema for the chosen t
         prompt_messages = [{"role": "system", "content": system_prompt}]
         for msg in conversation_history[-3:]: # Last 3 turns for context
             prompt_messages.append(msg) # msg should already be in {"role": "user/assistant", "content": "..."} format
-        prompt_messages.append({"role": "user", "content": f"Given our conversation history, generate a JSON plan for my new query: {user_query}"}) 
+        prompt_messages.append({"role": "user", "content": f"Given our conversation history, generate a JSON plan for my new query [always use llm_response_generation at end]: {user_query}"}) 
 
         if config.DEBUG_MODE:
             print(f"--- planner.py --- Sending prompt to LLM for planning. Query: {user_query}")

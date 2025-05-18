@@ -50,17 +50,17 @@ class Executor:
         tools_dict = {}
         try:
             tools_dict["web_search"] = get_web_search_langchain_tool(self.api_keys, config)
-            tools_dict["wikipedia_search"] = get_wiki_langchain_tool(self.api_keys, config)
-            tools_dict["get_weather"] = get_weather_langchain_tool(self.api_keys, config)
-            tools_dict["magnet_link_fetcher"] = get_magnet_fetcher_langchain_tool(self.api_keys, config)
-            tools_dict["document_retrieval_augmented_generation"] = get_rag_langchain_tool(self.api_keys, config)
+            # tools_dict["wikipedia_search"] = get_wiki_langchain_tool(self.api_keys, config)
+            # tools_dict["get_weather"] = get_weather_langchain_tool(self.api_keys, config)
+            # tools_dict["magnet_link_fetcher"] = get_magnet_fetcher_langchain_tool(self.api_keys, config)
+            # tools_dict["document_retrieval_augmented_generation"] = get_rag_langchain_tool(self.api_keys, config)
             tools_dict["news_search"] = get_news_langchain_tool(self.api_keys, config)
         except Exception as e:
             if config.DEBUG_MODE:
                 print(f"--- executor.py --- Error initializing tools: {e}. Some tools may be unavailable.")
         return tools_dict
 
-    def execute_step(self, step_plan: dict, chat_history: list):
+    def execute_step(self, step_plan: dict, chat_history: list, context):
         """Executes a single step from the plan using Langchain tools."""
         tool_name = step_plan.get("tool")
         # Arguments from the planner are expected to be a dictionary matching the tool's Pydantic InputModel fields
@@ -72,7 +72,15 @@ class Executor:
             print(f"Executor: Executing step - Tool: {tool_name}, Args: {arguments}, Reasoning: {reasoning}")
 
         if tool_name == "llm_response_generation":
-            prompt_to_llm = arguments.get("prompt_to_llm", "Please provide a response.")
+            prompt_to_llm = arguments.get("prompt_to_llm", f"""Answer user in a conversational tone, based on the given context.
+                                          Use code blocks if required.
+
+                                          User Query: 
+                                          {chat_history[-1]['content']}
+
+                                          Context:
+                                          {context}
+                                          """)
             # Always pass the current chat_history as context
             return self._get_llm_synthesis_stream(
                 prompt=prompt_to_llm,
@@ -187,10 +195,10 @@ class Executor:
         plan_steps = plan_json["plan"]
         tool_outputs_for_synthesis = []
         final_response_streamed = False
-
+        context=''
         for i, step in enumerate(plan_steps):
             step_tool_name = step.get("tool")
-            execution_result = self.execute_step(step, conversation_history)
+            execution_result = self.execute_step(step, conversation_history, context)
 
             if step_tool_name == "llm_response_generation":
                 # This is a streaming generator itself
@@ -203,10 +211,11 @@ class Executor:
             else:
                 # It's a regular tool call (non-streaming output from execute_step)
                 tool_outputs_for_synthesis.append(execution_result)
-                conversation_history.append({
-                            "role": "system",
-                            "content": f"Tool '{step_tool_name}' \n**LATEST KNOWLEDGE**: {json.dumps(execution_result.get('output', {}))}"
-                        })
+                context = context + '\n\n' + str(execution_result)
+                # conversation_history.append({
+                #             "role": "system",
+                #             "content": f"Tool '{step_tool_name}' \n**LATEST KNOWLEDGE**: {json.dumps(execution_result.get('output', {}))}"
+                #         })
                 if execution_result["status"] == "error" and config.DEBUG_MODE:
                     print(f"Executor: Tool \'{step_tool_name}\' failed. Error: {execution_result['output']}")
                     # Decide if we should stop or continue. For now, continue and let synthesis handle it.

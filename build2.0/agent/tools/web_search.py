@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field, HttpUrl, ValidationError
 from langchain.tools import Tool
 import functools
 import logging
+from bs4 import BeautifulSoup
+import random
+import time
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +31,7 @@ class WebSearchOutput(BaseModel):
     source: Optional[HttpUrl] = Field(None, description="The source URL of the search result.")
     error: Optional[str] = Field(None, description="Error message if the search failed.")
     details: Optional[str] = Field(None, description="Additional details for errors or results.")
+    link_texts: Optional[list] = Field(None, description="List of structured text content from each organic result link.")
 
     class Config:
         extra = "forbid"
@@ -81,7 +85,7 @@ def _run_web_search_logic(inp: WebSearchInput, api_keys: Dict[str, str], config:
                 return WebSearchOutput(provider="DuckDuckGo", error="No clear answer found via DuckDuckGo.", details="Try rephrasing or use a different search tool/keyword.")
 
         elif provider == "serpapi":
-            serpapi_key = api_keys.get("SERPAPI_API_KEY")
+            serpapi_key = 'a5376e5cbc1b2676f4f6a1216ef198c68bade54729be785e8695b30791c3ee3d'
             if not serpapi_key:
                 return WebSearchOutput(provider="SerpAPI", error="SerpAPI key not found in configuration.")
             
@@ -106,10 +110,13 @@ def _run_web_search_logic(inp: WebSearchInput, api_keys: Dict[str, str], config:
                 for result in data["organic_results"]:
                     snippet = result.get("snippet")
                     link = result.get("link")
+                    text = get_structured_text_from_url(link) if link else None
                     if snippet:
                         summaries.append(snippet)
                     if link:
                         source_urls.append(link)
+                    if text:
+                        link_texts.append(text)
 
             summary = "\n\n".join(summaries) if summaries else None
             logger.info(f"SerpAPI summary: {summary}") # Log the summary for debugging
@@ -130,7 +137,8 @@ def _run_web_search_logic(inp: WebSearchInput, api_keys: Dict[str, str], config:
                     provider=f"SerpAPI (All Results)",
                     summary=summary,
                     source=validated_source_url,
-                    details="; ".join(source_urls) if len(source_urls) > 1 else None
+                    details="; ".join(source_urls) if len(source_urls) > 1 else None,
+                    link_texts=link_texts
                 )
             else:
                 return WebSearchOutput(provider="SerpAPI", error="No clear answer found via SerpAPI.")
@@ -248,5 +256,41 @@ if __name__ == "__main__":
 
     direct_invalid_result = run_web_search_tool_direct({"qwerty": "test"}, dummy_api_keys_instance, dummy_config_instance)
     print(json.dumps(direct_invalid_result, indent=2))
+
+
+
+
+def get_structured_text_from_url(url: str) -> str:
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
+    ]
+    cookies_list = [
+        {"sessionid": "abc123"},
+        {"userid": "user456"},
+        {"token": "xyz789"},
+        {},
+    ]
+    headers = {
+        "User-Agent": random.choice(user_agents)
+    }
+    cookies = random.choice(cookies_list)
+    delay = random.uniform(1, 3)
+    time.sleep(delay)
+    try:
+        resp = requests.get(url, headers=headers, cookies=cookies, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # Try to extract main content
+        texts = []
+        for tag in soup.find_all(["p", "h1", "h2", "h3", "li"]):
+            txt = tag.get_text(strip=True)
+            if txt:
+                texts.append(txt)
+        return "\n".join(texts)[:2000]  # Limit to 2000 chars for brevity
+    except Exception as e:
+        return f"[Failed to fetch or parse: {e}]"
 
 
